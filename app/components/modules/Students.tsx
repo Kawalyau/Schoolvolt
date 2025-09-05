@@ -20,10 +20,10 @@ import {
   serverTimestamp, 
   query, 
   orderBy,
-  Timestamp
+  Timestamp,
 } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db as firestore } from '../../config/firebase';
+import { auth, db as firestore, getSchoolId  } from '../../config/firebase';
 
 // Import components
 import StudentReports from './students/StudentReports';
@@ -47,11 +47,26 @@ const Students: React.FC = () => {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<'list' | 'reports'>('list');
+  const [schoolId, setSchoolId] = useState<string | null>(null);
 
-  const schoolId = 'izNUR8Cw0zUCGzcoGy2J'; // This should be dynamically determined in a real app
+
+
+  // Load school ID on component mount
+  useEffect(() => {
+    const loadSchoolId = async () => {
+      const id = await getSchoolId();
+      setSchoolId(id);
+    };
+    
+    loadSchoolId();
+  }, []);
 
   const loadData = useCallback(() => {
-    if (!schoolId) return;
+    if (!schoolId) {
+      setIsLoading(false);
+      setRefreshing(false);
+      return;
+    }
 
     setIsLoading(true);
 
@@ -173,6 +188,11 @@ const Students: React.FC = () => {
 
   const handleSaveStudent = useCallback(async (studentData: Partial<Student>, photoUri?: string | null) => {
     try {
+      if (!schoolId) {
+        Alert.alert('Error', 'No school associated with your account');
+        return;
+      }
+
       let photoUrl = photoUri;
       
       // If a new photo was selected (and it's a local URI), upload it
@@ -198,7 +218,7 @@ const Students: React.FC = () => {
         await addDoc(studentsRef, {
           ...finalStudentData,
           createdAt: serverTimestamp(),
-          createdBy: 'current-user-id', // This should be the actual logged-in user's UID
+          createdBy: auth.currentUser?.uid || 'unknown',
         });
         Alert.alert('Success', 'Student added successfully');
       }
@@ -221,11 +241,29 @@ const Students: React.FC = () => {
     setEditingStudent(null);
   }, []);
 
+  if (!schoolId && !isLoading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Ionicons name="school-outline" size={64} color="#6c757d" />
+          <Text style={styles.errorText}>No School Associated</Text>
+          <Text style={styles.errorSubtext}>
+            You are not associated with any school. Please contact your administrator.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.sectionTitle}>Student Management</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => handleOpenModal()}>
+        <TouchableOpacity 
+          style={styles.addButton} 
+          onPress={() => handleOpenModal()}
+          disabled={!schoolId}
+        >
           <Ionicons name="add" size={24} color="#fff" />
           <Text style={styles.addButtonText}>Add Student</Text>
         </TouchableOpacity>
@@ -288,7 +326,7 @@ const Students: React.FC = () => {
               schoolClasses={schoolClasses}
               isLoading={isLoading}
               onEditStudent={handleOpenModal} 
-              schoolId={''}
+              schoolId={schoolId || ''}
             />
           </>
         )}
@@ -334,11 +372,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
     color: '#2c3e50',
-  },
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
   },
   filterContainer: {
     backgroundColor: '#fff',
@@ -400,6 +433,25 @@ const styles = StyleSheet.create({
   },
   activeTabText: {
     color: '#4CAF50',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorSubtext: {
+    fontSize: 16,
+    color: '#6c757d',
+    textAlign: 'center',
+    lineHeight: 24,
   },
 });
 

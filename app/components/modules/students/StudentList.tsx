@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,14 +12,15 @@ import {
   ScrollView,
   Share,
   Dimensions,
-  Platform
+  Platform,
+  Alert
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { Student, SchoolClass, AppTimestamp } from '../../../types';
 import StudentCard from './StudentCard';
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
+import { doc, updateDoc, deleteDoc, collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { db, auth } from '../../../config/firebase';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface StudentListProps {
@@ -30,7 +31,6 @@ interface StudentListProps {
 }
 
 const { width, height } = Dimensions.get('window');
-const SCHOOL_ID = 'izNUR8Cw0zUCGzcoGy2J';
 
 const StudentList: React.FC<StudentListProps> = ({
   students,
@@ -44,6 +44,76 @@ const StudentList: React.FC<StudentListProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [schoolId, setSchoolId] = useState<string | null>(null);
+  const [schoolIdLoading, setSchoolIdLoading] = useState(true);
+  const [schoolIdError, setSchoolIdError] = useState<string | null>(null);
+
+  // Improved school ID fetching logic
+  useEffect(() => {
+    const fetchSchoolId = async () => {
+      try {
+        setSchoolIdLoading(true);
+        setSchoolIdError(null);
+        
+        const user = auth.currentUser;
+        if (!user) {
+          setSchoolIdError('User not authenticated');
+          setSchoolIdLoading(false);
+          return;
+        }
+
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('uid', '==', user.uid));
+        const querySnapshot = await getDocs(q);
+        
+        if (querySnapshot.empty) {
+          setSchoolIdError('User profile not found');
+          setSchoolIdLoading(false);
+          return;
+        }
+
+        const userData = querySnapshot.docs[0].data();
+        const schoolId = userData.schoolId || null;
+        
+        setSchoolId(schoolId);
+        if (!schoolId) {
+          setSchoolIdError('No school assigned to user');
+        }
+        
+      } catch (err) {
+        console.error('Error fetching school ID:', err);
+        setSchoolIdError('Failed to fetch school information');
+      } finally {
+        setSchoolIdLoading(false);
+      }
+    };
+
+    fetchSchoolId();
+
+    // Set up real-time listener for school ID changes
+    const user = auth.currentUser;
+    if (user) {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('uid', '==', user.uid));
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        if (!snapshot.empty) {
+          const userData = snapshot.docs[0].data();
+          const newSchoolId = userData.schoolId || null;
+          setSchoolId(newSchoolId);
+          if (!newSchoolId) {
+            setSchoolIdError('No school assigned to user');
+          } else {
+            setSchoolIdError(null);
+          }
+        }
+      }, (error) => {
+        console.error('Error listening to school ID:', error);
+      });
+
+      return unsubscribe;
+    }
+  }, []);
 
   const getClassName = (classId: string) => {
     const schoolClass = schoolClasses.find(c => c.id === classId);
@@ -74,15 +144,22 @@ const StudentList: React.FC<StudentListProps> = ({
       setError('No student selected. Please try again.');
       return;
     }
+    
+    if (!schoolId) {
+      setError('No school associated with your account');
+      return;
+    }
+    
     setError(null);
     try {
-      const studentRef = doc(db, `schools/${SCHOOL_ID}/students/${selectedStudent.id}`);
+      const studentRef = doc(db, `schools/${schoolId}/students/${selectedStudent.id}`);
       await updateDoc(studentRef, {
         ...editForm,
         updatedAt: new Date().toISOString() as AppTimestamp,
       });
       setModalType(null);
       setSelectedStudent(null);
+      Alert.alert('Success', 'Student updated successfully');
     } catch (err) {
       setError((err as Error).message || 'Failed to update student. Please check your connection and try again.');
     }
@@ -93,12 +170,19 @@ const StudentList: React.FC<StudentListProps> = ({
       setError('No student selected. Please try again.');
       return;
     }
+    
+    if (!schoolId) {
+      setError('No school associated with your account');
+      return;
+    }
+    
     setError(null);
     try {
-      const studentRef = doc(db, `schools/${SCHOOL_ID}/students/${selectedStudent.id}`);
+      const studentRef = doc(db, `schools/${schoolId}/students/${selectedStudent.id}`);
       await deleteDoc(studentRef);
       setModalType(null);
       setSelectedStudent(null);
+      Alert.alert('Success', 'Student deleted successfully');
     } catch (err) {
       setError((err as Error).message || 'Failed to delete student. Please check your connection and try again.');
     }
@@ -172,6 +256,28 @@ Created By: ${selectedStudent.createdBy}
       </View>
     </View>
   );
+
+  // Show loading state while fetching school ID
+  if (schoolIdLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4A90E2" />
+        <Text style={styles.loadingText}>Loading school information...</Text>
+      </View>
+    );
+  }
+
+  // Show error if no school ID
+  if (!schoolId && schoolIdError) {
+    return (
+      <View style={styles.errorContainer}>
+        <Ionicons name="school-outline" size={64} color="#6c757d" />
+        <Text style={styles.errorText}>School Access Issue</Text>
+        <Text style={styles.errorSubtext}>{schoolIdError}</Text>
+        <Text style={styles.errorSubtext}>Please contact your administrator.</Text>
+      </View>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -331,8 +437,9 @@ Created By: ${selectedStudent.createdBy}
                       style={styles.dateInput}
                       onPress={() => setShowDatePicker(true)}
                     >
-                      
-                      
+                      <Text style={editForm.dateOfBirth ? styles.dateText : styles.placeholderText}>
+                        {editForm.dateOfBirth ? editForm.dateOfBirth.toString() : 'Select Date of Birth'}
+                      </Text>
                     </TouchableOpacity>
                     {showDatePicker && (
                       <DateTimePicker
@@ -455,6 +562,27 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
   },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorSubtext: {
+    fontSize: 16,
+    color: '#6c757d',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -504,7 +632,9 @@ const styles = StyleSheet.create({
   editButton: {
     backgroundColor: '#34C759',
   },
-  
+  deleteButton: {
+    backgroundColor: '#FF3B30',
+  },
   actionText: {
     color: '#FFFFFF',
     fontSize: 12,
@@ -661,19 +791,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
   },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFEBEE',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  errorText: {
-    color: '#D32F2F',
-    marginLeft: 8,
-    fontSize: 14,
-  },
+ 
   deleteIconContainer: {
     alignItems: 'center',
     marginBottom: 16,

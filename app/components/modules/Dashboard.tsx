@@ -35,7 +35,7 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { collection, query, where, getDocs, onSnapshot, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../../config/firebase';
+import { db, auth, getSchoolId  } from '../../config/firebase';
 import { styles as appStyles } from '../../styles';
 
 const { width } = Dimensions.get('window');
@@ -162,55 +162,25 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToCreateSchool }) => {
     try {
       setLoading(true);
       setError(null);
-      const user = auth.currentUser;
-      
-      if (!user) {
-        setShowSchoolModal(true);
-        setLoading(false);
-        return;
+  
+      const schoolId = await getSchoolId();
+  
+      if (!schoolId) {
+        throw new Error('No school associated');
       }
-
-      // Check if user has a school with timeout
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Request timeout')), 10000)
-      );
-
-      const schoolCheckPromise = (async () => {
-        const usersRef = collection(db, 'users');
-        const userQuery = query(usersRef, where('uid', '==', user.uid));
-        const userSnapshot = await getDocs(userQuery);
-        
-        if (userSnapshot.empty) {
-          throw new Error('User not found');
-        }
-
-        const userData = userSnapshot.docs[0].data();
-        const schoolId = userData.schoolId;
-
-        if (!schoolId) {
-          throw new Error('No school associated');
-        }
-
-        return schoolId;
-      })();
-
-      const schoolId = await Promise.race([schoolCheckPromise, timeoutPromise]) as string;
-
-      // Fetch school data with timeout
-      const schoolPromise = (async () => {
-        const schoolDoc = await getDoc(doc(db, 'schools', schoolId));
-        if (!schoolDoc.exists()) {
-          throw new Error('School not found');
-        }
-        return { id: schoolDoc.id, ...schoolDoc.data() };
-      })();
-
-      const schoolData = await Promise.race([schoolPromise, timeoutPromise]) as any;
+  
+      const schoolDoc = await getDoc(doc(db, 'schools', schoolId));
+  
+      if (!schoolDoc.exists()) {
+        throw new Error('School not found');
+      }
+  
+      const schoolData = { id: schoolDoc.id, ...schoolDoc.data() };
       setSchool(schoolData);
-
-      // Fetch dashboard data (optimized with mock data for now)
+  
+      // Load dashboard stats
       await fetchDashboardData(schoolId);
-      
+  
     } catch (err: any) {
       console.error('Dashboard error:', err);
       setError(err.message || 'Failed to load dashboard');
@@ -220,6 +190,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigateToCreateSchool }) => {
       setRefreshing(false);
     }
   }, []);
+  
 
   const fetchDashboardData = async (schoolId: string) => {
     try {

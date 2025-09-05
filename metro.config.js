@@ -2,7 +2,7 @@
 const { getDefaultConfig } = require('@expo/metro-config');
 
 const defaultConfig = getDefaultConfig(__dirname);
-
+defaultConfig.resolver.unstable_enablePackageExports = false;
 defaultConfig.resolver.sourceExts = [
   'tsx',
   'ts',
@@ -11,5 +11,6 @@ defaultConfig.resolver.sourceExts = [
   'json',
   'cjs'
 ];
+
 
 module.exports = defaultConfig;

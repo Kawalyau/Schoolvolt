@@ -14,57 +14,51 @@ import {
 import { 
   Users, 
   DollarSign, 
-  Calendar, 
+  Calendar as CalendarIcon, 
   FileText, 
   Plus,
-  Edit3,
-  Trash2,
-  ChevronRight,
-  UserPlus,
-  CreditCard,
-  Calendar as CalendarIcon,
-  BarChart3,
   Settings,
   BookOpen,
   Briefcase,
   Clock,
-  School
+  School,
+  UserPlus,
+  CreditCard,
+  BarChart3
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, query, where, onSnapshot, getDoc } from 'firebase/firestore';
-import { db, auth } from '../../config/firebase';
+
+import { db, getSchoolId } from '../../config/firebase';
 import { styles as appStyles } from '../../styles';
+import StatsCard from './hr/components/StatsCard';
+import QuickActionButton from './hr/components/QuickActionButton';
+import { StaffMember, SchoolData, HRStats } from '../../types';
+import { collection, onSnapshot, getDoc, doc, getDocs } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
-interface StaffMember {
-  id: string;
-  name: string;
-  position: string;
-  department: string;
-  salary: number;
-  joinDate: string;
-  contact: string;
-  email: string;
-}
-
-interface SchoolData {
-  id: string;
-  name: string;
-  level: string;
-  district: string;
-}
-
 interface HRProps {
   onNavigateToCreateSchool: () => void;
+  onNavigateToStaffList: () => void;
+  onNavigateToAddStaff: () => void;
+  onNavigateToSalaryManagement: () => void;
+  onNavigateToLeaveManagement: () => void;
+  onNavigateToHRReports: () => void;
 }
 
-const HR: React.FC<HRProps> = ({ onNavigateToCreateSchool }) => {
+const HRDashboard: React.FC<HRProps> = ({ 
+  onNavigateToCreateSchool,
+  onNavigateToStaffList,
+  onNavigateToAddStaff,
+  onNavigateToSalaryManagement,
+  onNavigateToLeaveManagement,
+  onNavigateToHRReports
+}) => {
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [school, setSchool] = useState<SchoolData | null>(null);
   const [schoolLoading, setSchoolLoading] = useState(true);
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<HRStats>({
     totalStaff: 0,
     totalSalary: 0,
     pendingLeaves: 0,
@@ -79,34 +73,16 @@ const HR: React.FC<HRProps> = ({ onNavigateToCreateSchool }) => {
   useEffect(() => {
     if (school) {
       fetchHRData();
-      setupRealtimeListener();
+      const unsubscribe = setupRealtimeListener();
+      return () => unsubscribe && unsubscribe();
     }
   }, [school]);
+  
 
   const fetchSchoolData = async () => {
     try {
       setSchoolLoading(true);
-      const user = auth.currentUser;
-      
-      if (!user) {
-        setSchoolLoading(false);
-        setShowSchoolModal(true);
-        return;
-      }
-
-      // Find user in users collection to get school ID
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('uid', '==', user.uid));
-      const querySnapshot = await getDocs(q);
-      
-      if (querySnapshot.empty) {
-        setSchoolLoading(false);
-        setShowSchoolModal(true);
-        return;
-      }
-
-      const userData = querySnapshot.docs[0].data();
-      const schoolId = userData.schoolId;
+      const schoolId = await getSchoolId();
 
       if (!schoolId) {
         setSchoolLoading(false);
@@ -183,26 +159,6 @@ const HR: React.FC<HRProps> = ({ onNavigateToCreateSchool }) => {
     return unsubscribe;
   };
 
-  const handleAddStaff = () => {
-    // Navigate to add staff screen
-    Alert.alert('Info', 'This would navigate to Add Staff form');
-  };
-
-  const handleManageSalaries = () => {
-    // Navigate to salary management
-    Alert.alert('Info', 'This would navigate to Salary Management');
-  };
-
-  const handleManageLeaves = () => {
-    // Navigate to leave management
-    Alert.alert('Info', 'This would navigate to Leave Management');
-  };
-
-  const handleViewReports = () => {
-    // Navigate to reports
-    Alert.alert('Info', 'This would navigate to HR Reports');
-  };
-
   const handleCreateSchool = () => {
     setShowSchoolModal(false);
     onNavigateToCreateSchool();
@@ -210,49 +166,33 @@ const HR: React.FC<HRProps> = ({ onNavigateToCreateSchool }) => {
 
   const renderStatsCards = () => (
     <View style={styles.statsGrid}>
-      <View style={styles.statCard}>
-        <LinearGradient
-          colors={['#4f46e5', '#6366f1']}
-          style={styles.statGradient}
-        >
-          <Users size={24} color="#fff" />
-        </LinearGradient>
-        <Text style={styles.statValue}>{stats.totalStaff}</Text>
-        <Text style={styles.statLabel}>Total Staff</Text>
-      </View>
+      <StatsCard
+        icon={Users}
+        value={stats.totalStaff}
+        label="Total Staff"
+        colors={['#4f46e5', '#6366f1']}
+      />
       
-      <View style={styles.statCard}>
-        <LinearGradient
-          colors={['#10b981', '#34d399']}
-          style={styles.statGradient}
-        >
-          <DollarSign size={24} color="#fff" />
-        </LinearGradient>
-        <Text style={styles.statValue}>${(stats.totalSalary / 1000).toFixed(0)}K</Text>
-        <Text style={styles.statLabel}>Monthly Payroll</Text>
-      </View>
+      <StatsCard
+        icon={DollarSign}
+        value={`$${(stats.totalSalary / 1000).toFixed(0)}K`}
+        label="Monthly Payroll"
+        colors={['#10b981', '#34d399']}
+      />
       
-      <View style={styles.statCard}>
-        <LinearGradient
-          colors={['#f59e0b', '#fbbf24']}
-          style={styles.statGradient}
-        >
-          <CalendarIcon size={24} color="#fff" />
-        </LinearGradient>
-        <Text style={styles.statValue}>{stats.pendingLeaves}</Text>
-        <Text style={styles.statLabel}>Pending Leaves</Text>
-      </View>
+      <StatsCard
+        icon={CalendarIcon}
+        value={stats.pendingLeaves}
+        label="Pending Leaves"
+        colors={['#f59e0b', '#fbbf24']}
+      />
       
-      <View style={styles.statCard}>
-        <LinearGradient
-          colors={['#ef4444', '#f87171']}
-          style={styles.statGradient}
-        >
-          <FileText size={24} color="#fff" />
-        </LinearGradient>
-        <Text style={styles.statValue}>{stats.activeRequests}</Text>
-        <Text style={styles.statLabel}>Active Requests</Text>
-      </View>
+      <StatsCard
+        icon={FileText}
+        value={stats.activeRequests}
+        label="Active Requests"
+        colors={['#ef4444', '#f87171']}
+      />
     </View>
   );
 
@@ -260,45 +200,33 @@ const HR: React.FC<HRProps> = ({ onNavigateToCreateSchool }) => {
     <View style={styles.quickActions}>
       <Text style={styles.sectionTitle}>Quick Actions</Text>
       <View style={styles.actionsGrid}>
-        <TouchableOpacity style={styles.actionButton} onPress={handleAddStaff}>
-          <LinearGradient
-            colors={['#4f46e5', '#6366f1']}
-            style={styles.actionGradient}
-          >
-            <UserPlus size={24} color="#fff" />
-          </LinearGradient>
-          <Text style={styles.actionText}>Add Staff</Text>
-        </TouchableOpacity>
+        <QuickActionButton
+          icon={UserPlus}
+          label="Add Staff"
+          onPress={onNavigateToAddStaff}
+          colors={['#4f46e5', '#6366f1']}
+        />
         
-        <TouchableOpacity style={styles.actionButton} onPress={handleManageSalaries}>
-          <LinearGradient
-            colors={['#10b981', '#34d399']}
-            style={styles.actionGradient}
-          >
-            <CreditCard size={24} color="#fff" />
-          </LinearGradient>
-          <Text style={styles.actionText}>Salaries</Text>
-        </TouchableOpacity>
+        <QuickActionButton
+          icon={CreditCard}
+          label="Salaries"
+          onPress={onNavigateToSalaryManagement}
+          colors={['#10b981', '#34d399']}
+        />
         
-        <TouchableOpacity style={styles.actionButton} onPress={handleManageLeaves}>
-          <LinearGradient
-            colors={['#f59e0b', '#fbbf24']}
-            style={styles.actionGradient}
-          >
-            <CalendarIcon size={24} color="#fff" />
-          </LinearGradient>
-          <Text style={styles.actionText}>Leaves</Text>
-        </TouchableOpacity>
+        <QuickActionButton
+          icon={CalendarIcon}
+          label="Leaves"
+          onPress={onNavigateToLeaveManagement}
+          colors={['#f59e0b', '#fbbf24']}
+        />
         
-        <TouchableOpacity style={styles.actionButton} onPress={handleViewReports}>
-          <LinearGradient
-            colors={['#ef4444', '#f87171']}
-            style={styles.actionGradient}
-          >
-            <BarChart3 size={24} color="#fff" />
-          </LinearGradient>
-          <Text style={styles.actionText}>Reports</Text>
-        </TouchableOpacity>
+        <QuickActionButton
+          icon={BarChart3}
+          label="Reports"
+          onPress={onNavigateToHRReports}
+          colors={['#ef4444', '#f87171']}
+        />
       </View>
     </View>
   );
@@ -307,7 +235,7 @@ const HR: React.FC<HRProps> = ({ onNavigateToCreateSchool }) => {
     <View style={styles.recentSection}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Recent Staff</Text>
-        <TouchableOpacity>
+        <TouchableOpacity onPress={onNavigateToStaffList}>
           <Text style={styles.viewAllText}>View All</Text>
         </TouchableOpacity>
       </View>
@@ -319,7 +247,7 @@ const HR: React.FC<HRProps> = ({ onNavigateToCreateSchool }) => {
           <Users size={48} color="#9ca3af" />
           <Text style={styles.emptyStateText}>No staff members yet</Text>
           <Text style={styles.emptyStateSubtext}>Add your first staff member to get started</Text>
-          <TouchableOpacity style={styles.addFirstButton} onPress={handleAddStaff}>
+          <TouchableOpacity style={styles.addFirstButton} onPress={onNavigateToAddStaff}>
             <Text style={styles.addFirstButtonText}>Add First Staff</Text>
           </TouchableOpacity>
         </View>
@@ -343,7 +271,6 @@ const HR: React.FC<HRProps> = ({ onNavigateToCreateSchool }) => {
                 <Text style={styles.staffDepartment}>{item.department}</Text>
                 <Text style={styles.staffSalary}>${item.salary?.toLocaleString()}</Text>
               </View>
-              <ChevronRight size={20} color="#9ca3af" />
             </TouchableOpacity>
           )}
         />
@@ -454,7 +381,7 @@ const HR: React.FC<HRProps> = ({ onNavigateToCreateSchool }) => {
       {renderSchoolModal()}
 
       {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} onPress={handleAddStaff}>
+      <TouchableOpacity style={styles.fab} onPress={onNavigateToAddStaff}>
         <LinearGradient
           colors={['#4f46e5', '#6366f1']}
           style={styles.fabGradient}
@@ -509,37 +436,6 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 24,
   },
-  statCard: {
-    width: (width - 48) / 2 - 6,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statGradient: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1f2937',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-    textAlign: 'center',
-  },
   quickActions: {
     marginBottom: 24,
   },
@@ -554,24 +450,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     gap: 12,
-  },
-  actionButton: {
-    width: (width - 48) / 2 - 6,
-    alignItems: 'center',
-  },
-  actionGradient: {
-    width: 60,
-    height: 60,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  actionText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-    textAlign: 'center',
   },
   recentSection: {
     marginBottom: 24,
@@ -806,4 +684,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default HR;
+export default HRDashboard;
